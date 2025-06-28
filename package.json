@@ -1,0 +1,17 @@
+{
+  "name": "blocking-rpc",
+  "version": "0.0.1",
+  "description": "A blocking RPC implementation for use by WebAssembly imports",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --experimental-strip-types --experimental-transform-types --test src/index.test.ts "
+  },
+  "type": "module",
+  "author": "Brandon Payton",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.3",
+    "prettier": "^3.6.0",
+    "typescript": "^5.8.3"
+  }
+}
