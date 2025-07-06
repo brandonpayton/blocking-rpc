@@ -313,11 +313,12 @@ const dataTypeHandler_Object: DataTypeHandler<object> = {
 						responseBuffer,
 					});
 					// TODO: Why isn't this passing type check?
+					// TODO: Check return value of wait()
 					// @ts-ignore
 					Atomics.wait(
 						new BigInt64Array(responseBuffer),
 						0,
-						0
+						0n,
 					);
 					return read(responseBuffer, endpoint);
 				},
@@ -333,11 +334,12 @@ const dataTypeHandler_Object: DataTypeHandler<object> = {
 						responseBuffer,
 					});
 					// TODO: Why isn't this passing type check?
+					// TODO: Check return value of wait()
 					// @ts-ignore
 					Atomics.wait(
 						new BigInt64Array(responseBuffer),
 						0,
-						0
+						0n,
 					);
 					// TODO: Should we throw if the result is an error?
 				},
@@ -500,6 +502,7 @@ export function expose<T extends SerializableDataType>(
 	endpoint: ExposingEndpoint
 ): ReleaseFunction {
 	function onMessage(event: MessageEvent) {
+		console.log('onMessage', event);
 		// @TODO: Warn if event doesn't have expected properties.
 
 		const action = event.data as RemoteAction;
@@ -517,7 +520,7 @@ export function expose<T extends SerializableDataType>(
 				// TODO: Wrap this in function similar to read() and write()
 				Atomics.notify(
 					new BigInt64Array(action.responseBuffer),
-					0
+					0,
 				);
 				break;
 			}
@@ -570,7 +573,7 @@ export function expose<T extends SerializableDataType>(
 export function consume<T>(
 	name: string,
 	endpoint: RemoteEndpoint
-): T{
+): T {
 
 	const responseBuffer = createSharedArrayBufferForRpc();
 	endpoint.postMessage({
@@ -579,39 +582,14 @@ export function consume<T>(
 		responseBuffer,
 	});
 	// TODO: Why isn't this passing type check?
+	// TODO: Check return value of wait()
 	// @ts-ignore
 	Atomics.wait(
 		new BigInt64Array(responseBuffer),
 		0,
-		0
+		0n,
 	);
 
 	const result = read(responseBuffer, endpoint);
 	return result as T;
-}
-
-function get(target: any, path: NonEmptyArray<string>): any {
-	return path.reduce((acc, key) => acc[key], target);
-}
-
-function set(target: any, path: NonEmptyArray<string>, value: any): void {
-	const propName = path[path.length - 1];
-
-	if (path.length > 1) {
-		const subTargetPath = path.slice(0, -1);
-		target = get(target, subTargetPath as NonEmptyArray<string>);
-	}
-
-	target[propName] = value;
-}
-
-function apply(target: any, path: NonEmptyArray<string>, args: any[]): any {
-	const methodName = path[path.length - 1];
-
-	if (target.length > 1) {
-		const contextPath = path.slice(0, -1);
-		target = get(target, contextPath as NonEmptyArray<string>);
-	}
-
-	return target[methodName](...args);
 }
