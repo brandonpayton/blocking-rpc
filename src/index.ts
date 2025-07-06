@@ -249,11 +249,11 @@ const dataTypeHandler_Uint8Array: DataTypeHandler<Uint8Array> = {
 		bufferBytes.set(new Uint8Array(value));
 	},
 	read(source: DataView) {
-		const length = source.getUint32(0, true);
+		const length = source.getUint32(0);
 		const lengthBytes = 4;
 		const startOffset = source.byteOffset + lengthBytes;
 		// TODO: Can we make this more efficient?
-		return new Uint8Array(source.buffer, startOffset, startOffset + length);
+		return new Uint8Array(source.buffer, startOffset, length);
 	},
 };
 
@@ -264,14 +264,8 @@ const dataTypeHandler_String: DataTypeHandler<string> = {
 		dataTypeHandler_Uint8Array.write(target, encodedText);
 	},
 	read(source: DataView, endpoint: RemoteEndpoint) {
-		dataTypeHandler_Uint8Array.read(source, endpoint);
-		const length = source.getUint32(0, true);
+		const stringData = dataTypeHandler_Uint8Array.read(source, endpoint);
 		const decoder = new TextDecoder();
-		const stringData = new Uint8Array(
-			source.buffer,
-			source.byteOffset + 4,
-			length,
-		);
 		return decoder.decode(stringData);
 	},
 };
@@ -284,26 +278,24 @@ const dataTypeHandler_Object: DataTypeHandler<object> = {
 		// TODO: Handle null as special case.
 
 		// Relay object keys so they can be represented by a remote object.
-		const typedProperties = Object.entries(value).map(
-			([ key, value ]) => [ key, typeof value ]
-		);
+		const typedProperties = Object.keys(value);
 		const jsonString = JSON.stringify(typedProperties);
 		dataTypeHandler_String.write(target, jsonString);
 	},
 	read(source: DataView, endpoint: RemoteEndpoint) {
 		const jsonString = dataTypeHandler_String.read(source, endpoint);
-		const typedProperties = JSON.parse(jsonString);
+		const objectKeys = JSON.parse(jsonString);
 		// TODO: Is this how we should handle an error like this?
-		if (!Array.isArray(typedProperties)) {
+		if (!Array.isArray(objectKeys)) {
 			throw new TypeError(
-				`Expected array of object entries, got ${typeof typedProperties}`,
+				`Expected array of object keys, got ${typeof objectKeys}`,
 			);
 		}
 
 		const result = { [symbolRemoteObject]: true };
-		for (const [ key ] of typedProperties) {
+		for (const key of objectKeys) {
 			Object.defineProperty(result, key, {
-				get: () => {
+				get() {
 					const targetRef = source.buffer;
 					const responseBuffer = createSharedArrayBufferForRpc();
 					endpoint.postMessage({
@@ -323,7 +315,7 @@ const dataTypeHandler_Object: DataTypeHandler<object> = {
 					return read(responseBuffer, endpoint);
 				},
 				// TODO: Should we constrain this type?
-				set: (value: any) => {
+				set(value: any) {
 					const targetRef = source.buffer;
 					const responseBuffer = createSharedArrayBufferForRpc();
 					endpoint.postMessage({
@@ -417,7 +409,8 @@ const sharedArrayBufferPrefixByteLength = 8;
 
 export function createSharedArrayBufferForRpc() {
 	// TODO: Consider preallocating a buffer that is large enough for primitive types.
-	return new SharedArrayBuffer(sharedArrayBufferPrefixByteLength);
+	// TODO: Revisit maxByteLength
+	return new SharedArrayBuffer(sharedArrayBufferPrefixByteLength, { maxByteLength: 1024 * 1024 * 1024 });
 }
 
 export function write(target: SharedArrayBuffer, data: SerializableDataType) {
@@ -444,6 +437,8 @@ export function write(target: SharedArrayBuffer, data: SerializableDataType) {
 		handlerIndex = dataTypeHandlerIndices.Error;
 	} else if (typeof data === "object") {
 		handlerIndex = dataTypeHandlerIndices.Object;
+	} else if (typeof data === "function") {
+		handlerIndex = dataTypeHandlerIndices.Function;
 	}
 
 	if (handlerIndex === undefined) {
@@ -501,11 +496,12 @@ export function expose<T extends SerializableDataType>(
 	// @TODO: Make this a generic type so we can accommodate other worker types.
 	endpoint: ExposingEndpoint
 ): ReleaseFunction {
-	function onMessage(event: MessageEvent) {
-		console.log('onMessage', event);
+	// TODO: Fix type here
+	function onMessage(event: any) {
+		console.log('onMessage for', exposedName, event);
 		// @TODO: Warn if event doesn't have expected properties.
 
-		const action = event.data as RemoteAction;
+		const action = event as RemoteAction;
 
 		// Determine the target of the operation.
 		// This may be a follow-up request using a previous result.
@@ -564,6 +560,7 @@ export function expose<T extends SerializableDataType>(
 		}
 	}
 
+	console.log('exposing', exposedName);
 	endpoint.on('message', onMessage);
 	return () => {
 		endpoint.off('message', onMessage);
@@ -574,13 +571,14 @@ export function consume<T>(
 	name: string,
 	endpoint: RemoteEndpoint
 ): T {
-
+	console.log('consuming', name);
 	const responseBuffer = createSharedArrayBufferForRpc();
 	endpoint.postMessage({
 		type: 'consume',
 		name,
 		responseBuffer,
 	});
+	console.log('posted consume message for', name);
 	// TODO: Why isn't this passing type check?
 	// TODO: Check return value of wait()
 	// @ts-ignore
