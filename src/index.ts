@@ -503,12 +503,6 @@ export function expose<T extends SerializableDataType>(
 
 		const action = event as RemoteAction;
 
-		// Determine the target of the operation.
-		// This may be a follow-up request using a previous result.
-		const target = resultCache.has(action.responseBuffer)
-			? resultCache.get(action.responseBuffer)
-			: exposedValue;
-
 		switch (action.type) {
 			case 'consume': {
 				write(action.responseBuffer, exposedValue);
@@ -522,6 +516,7 @@ export function expose<T extends SerializableDataType>(
 			}
 			case 'get': {
 				// @TODO: Try/catch for undefined subproperties or getter failure.
+				const target = resultCache.get(action.targetRef);
 				const result = target[action.propKey];
 				resultCache.set(action.responseBuffer, result);
 
@@ -534,6 +529,7 @@ export function expose<T extends SerializableDataType>(
 			}
 			case 'set': {
 				// @TODO: Try/catch for undefined subproperties or setter failure.
+				const target = resultCache.get(action.targetRef);
 				target[action.propKey] = action.value;
 				Atomics.notify(
 					new BigInt64Array(action.responseBuffer),
@@ -543,7 +539,6 @@ export function expose<T extends SerializableDataType>(
 			}
 			case 'apply': {
 				// @TODO: Try/catch for undefined subproperties or call failure.
-
 				const context = resultCache.get(action.contextRef);
 				const func = resultCache.get(action.targetRef);
 
