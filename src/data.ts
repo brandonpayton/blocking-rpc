@@ -5,7 +5,7 @@ import { serializeError, deserializeError } from "serialize-error";
 const TypedArray = Object.getPrototypeOf(Uint8Array.prototype).constructor;
 type TypedArray = typeof TypedArray;
 
-type SerializableDataType =
+export type SerializableDataType =
 	| undefined
 	| boolean
 	| number
@@ -49,6 +49,7 @@ function ensureSufficientBufferSize<T extends TypedArray | DataView>(
 	return new DataViewConstructor(buffer, arrayView.byteOffset);
 }
 
+// TODO: Remove this if it is unnecessary.
 const dataTypeHandler_Never: DataTypeHandler<undefined> = {
 	write: (target: DataView, value: any) => {
 		throw new Error("Cannot write 'never' type");
@@ -57,6 +58,7 @@ const dataTypeHandler_Never: DataTypeHandler<undefined> = {
 		throw new Error("Cannot read 'never' type");
 	},
 };
+
 const dataTypeHandler_Undefined: DataTypeHandler<undefined> = {
 	write(target: DataView, value: undefined) {
 		// no-op
@@ -65,6 +67,7 @@ const dataTypeHandler_Undefined: DataTypeHandler<undefined> = {
 		return undefined;
 	},
 };
+
 const dataTypeHandler_Boolean: DataTypeHandler<boolean> = {
 	write(target: DataView, value: boolean) {
 		target = ensureSufficientBufferSize(target, 1);
@@ -74,6 +77,7 @@ const dataTypeHandler_Boolean: DataTypeHandler<boolean> = {
 		return source.getUint8(0) === 1;
 	},
 };
+
 const dataTypeHandler_Number: DataTypeHandler<number> = {
 	write(target: DataView, value: number) {
 		// JS numbers are 64-bit floating point.
@@ -90,6 +94,7 @@ const dataTypeHandler_Number: DataTypeHandler<number> = {
 		return source.getFloat64(0, true); // Use little-endian format
 	},
 };
+
 const dataTypeHandler_BigInt: DataTypeHandler<bigint> = {
 	write(target: DataView, value: bigint) {
 		target = ensureSufficientBufferSize(target, 8);
@@ -264,10 +269,10 @@ export function read(source: SharedArrayBuffer): SerializableDataType {
 		0,
 		sharedArrayBufferPrefixByteLength,
 	);
-	const handlerIndex = rpcHeader[0];
-	const handler = dataTypeHandlerList[handlerIndex];
+	const typeByte = rpcHeader[0];
+	const handler = dataTypeHandlerList[typeByte];
 	if (!handler) {
-		throw new TypeError(`Unsupported data type: ${handlerIndex}`);
+		throw new TypeError(`Unsupported data type: ${typeByte}`);
 	}
 
 	const dataView = new DataView(source, sharedArrayBufferPrefixByteLength);
