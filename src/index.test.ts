@@ -83,7 +83,7 @@ suite("Blocking RPC", () => {
 		assert.equal(actualError.message, expectedError.message);
 		assert.deepEqual(expectedError, actualError);
 	});
-	test("function property", async () => {
+	test("call function", async () => {
 		assert.equal(fixture.propIdentityFunction(undefined), undefined);
 		assert.equal(fixture.propIdentityFunction(null), null);
 		assert.equal(fixture.propIdentityFunction(true), true);
@@ -109,6 +109,8 @@ suite("Blocking RPC", () => {
 			Object.entries({ a: 1, b: 2, nested: { c: 3, d: 4 } }),
 		);
 	});
+	test.todo('can use remote arrays');
+	test.todo("set remote property");
 	test("thrown error is propagated", async () => {
 		assert.throws(
 			() => fixture.throwTypeError("expected message"),

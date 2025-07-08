@@ -23,6 +23,7 @@ const props = {
 	propUint8Array: new Uint8Array([1, 2, 3]),
 	propError: new Error('test'),
 	propIdentityFunction: (value: any) => value,
+	propArray: [1, 2, 3],
 	add(a: number, b: number) {
 		return a + b;
 	},
