@@ -1,41 +1,64 @@
-import { suite, test } from 'node:test';
-import assert from 'node:assert';
+import { suite, beforeEach, afterEach, test } from "node:test";
+import assert from "node:assert";
+import { Worker } from "node:worker_threads";
 
-import { Worker } from 'node:worker_threads';
+import { consume } from "./index.ts";
 
-function startWorker() {
-	const worker = new Worker(new URL('./test/test-worker.ts', import.meta.url));
-	return new Promise<Worker>((resolve, reject) => {
-		function startedHandler(message: any) {
-			if (message === 'worker-started') {
-				worker.off('message', startedHandler);
-				worker.off('error', errorHandler);
-				resolve(worker);
+import type { Fixture } from "./test/worker-that-exposes-test-fixtures.ts";
+
+suite("Blocking RPC", () => {
+	let worker: Worker;
+	let fixture: Fixture;
+
+	beforeEach(async () => {
+		worker = new Worker(
+			new URL("./test/worker-that-exposes-test-fixtures.ts", import.meta.url),
+		);
+		await new Promise<Worker>((resolve, reject) => {
+			function startedHandler(message: any) {
+				console.log("startedHandler", message);
+				if (message === "worker-started") {
+					done();
+				}
 			}
-		}
-		function errorHandler(error: any) {
-			worker.off('message', startedHandler);
-			worker.off('error', errorHandler);
-			reject(error);
-		}
-		worker.on('message', startedHandler);
-		worker.on('error', errorHandler);
+			function done(error?: Error) {
+				if (error) {
+					reject(error);
+				} else {
+					resolve(worker);
+				}
+				worker.off("message", startedHandler);
+				worker.off("error", errorHandler);
+			}
+			function errorHandler(error: any) {
+				console.log("errorHandler", error);
+				done(error);
+			}
+			worker.on("message", startedHandler);
+			worker.on("error", errorHandler);
+		});
+		fixture = consume("fixture", worker);
 	});
-}
+	afterEach(() => {
+		worker.terminate();
+	});
 
-suite('Blocking RPC', () => {
-	test('expose and call', async () => {
-		let worker: Worker | undefined;
-		try {
-			worker = await startWorker();
-			assert.ok(worker);
-
-			// TODO: Here we would normally expose a value and call it.
-			// For now, we just check that the worker starts.
-		} finally {
-			if (worker) {
-				worker.terminate();
-			}
-		}
+	test("number property", async () => {
+		assert.equal(fixture.propOneTwoThree, 123);
+	});
+	test("number property access - nested", async () => {
+		assert.equal(fixture.nested.propOneTwoThree, 123);
+	});
+	test("string property", async () => {
+		assert.equal(fixture.propHelloWorld, "Hello World");
+	});
+	test("string property access - nested", async () => {
+		assert.equal(fixture.nested.propHelloWorld, "Hello World");
+	});
+	test("function property", async () => {
+		assert.equal(fixture.add(1, 2), 3);
+	});
+	test("function property access - nested", async () => {
+		assert.equal(fixture.nested.add(3, 4), 7);
 	});
 });
