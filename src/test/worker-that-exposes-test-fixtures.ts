@@ -8,12 +8,28 @@ if (isMainThread) {
 }
 
 const props = {
-	propOneTwoThree: 123,
-	propHelloWorld: 'Hello World',
+	propUndefined: undefined,
+	propTrue: true,
+	propFalse: false,
+	propZeroNumber: 0,
+	propOneTwoThreeNumber: 123,
+	propOneTwoThreePointTwoFiveNumber: 123.25,
+	propNegativeOneNumber: -1,
+	propNegativeOnePointFiveNumber: -1.5,
+	propBigInt: BigInt(123),
+	propEmptyString: '',
+	propHelloWorldString: 'Hello World',
+	propObject: { a: 1, b: 2, nested: { c: 3, d: 4 } },
+	propUint8Array: new Uint8Array([1, 2, 3]),
+	propError: new Error('test'),
+	propIdentityFunction: (value: any) => value,
 	add(a: number, b: number) {
 		return a + b;
 	},
-}
+	throwTypeError(message: string) {
+		throw new TypeError(message);
+	},
+};
 
 const fixture = {
 	...props,

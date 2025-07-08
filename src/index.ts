@@ -1,10 +1,10 @@
-import type { Worker as NodeWorker } from 'worker_threads';
+import type { Worker as NodeWorker } from "worker_threads";
 import { serializeError, deserializeError } from "serialize-error";
 
 // TODO: Document and explain why no postMessage
 interface ExposingEndpoint {
-	on: NodeWorker['on'],
-	off: NodeWorker['off'],
+	on: NodeWorker["on"];
+	off: NodeWorker["off"];
 }
 
 // TODO: Document and explain why no event listening
@@ -17,11 +17,11 @@ type ReleaseFunction = () => void;
 type NonEmptyArray<T> = [T, ...T[]];
 
 type RemoteAction_Consume = {
-	type: 'consume',
+	type: "consume";
 	/**
 	 * The name of the exposed object or value.
 	 */
-	name: string,
+	name: string;
 
 	// TODO: Review these comments for correctness. This one below is false. This one below is now false
 	/**
@@ -29,7 +29,7 @@ type RemoteAction_Consume = {
 	 * of the operation stored in a WeakMap. The target will be naturally
 	 * forgotten when the reference key is forgotten.
 	 */
-	keyForRef: string,
+	keyForRef: string;
 
 	/**
 	 * The buffer used to:
@@ -37,23 +37,23 @@ type RemoteAction_Consume = {
 	 * - relay the result
 	 * - reference the target by the consumer (TODO: Explain this better)
 	 */
-	responseBuffer: SharedArrayBuffer,
-}
+	responseBuffer: SharedArrayBuffer;
+};
 
 /**
  * A remote request to get a property under the exposed object.
  */
 type RemoteAction_Get = {
-	type: 'get',
+	type: "get";
 
-	targetRef: string,
+	targetRef: string;
 
 	/**
 	 * The key of the property to get.
 	 */
-	propKey: string,
+	propKey: string;
 
-	keyForRef: string,
+	keyForRef: string;
 
 	/**
 	 * The buffer used to:
@@ -61,55 +61,55 @@ type RemoteAction_Get = {
 	 * - relay the result
 	 * - reference the target by the consumer (TODO: Explain this better)
 	 */
-	responseBuffer: SharedArrayBuffer,
-}
+	responseBuffer: SharedArrayBuffer;
+};
 
 /**
  * A remote request to set a property under the exposed object.
  */
 type RemoteAction_Set = {
-	type: 'set',
-	targetRef: string,
+	type: "set";
+	targetRef: string;
 
 	/**
 	 * The key of the property to get.
 	 */
-	propKey: string,
+	propKey: string;
 	/**
 	 * The value to set.
 	 */
-	value: SerializableDataType,
+	value: SerializableDataType;
 
 	/**
 	 * The buffer used to signal completion.
 	 */
-	responseBuffer: SharedArrayBuffer,
-}
+	responseBuffer: SharedArrayBuffer;
+};
 
 /**
  * A remote request to call a method under the exposed object.
  */
 type RemoteAction_Apply = {
-	type: 'apply',
+	type: "apply";
 
 	/**
 	 * A shared key used to cache and reference the remote context
 	 * of the operation stored in a WeakMap. The target will be naturally
 	 * forgotten when the reference key is forgotten.
 	 */
-	contextRef: string,
+	contextRef: string;
 
 	/**
 	 * A ref to the remote function to apply.
 	 */
-	targetRef: string,
+	targetRef: string;
 
 	/**
 	 * The arguments to pass to the method.
 	 */
-	args: any[],
+	args: any[];
 
-	keyForRef: string,
+	keyForRef: string;
 
 	/**
 	 * The buffer used to:
@@ -117,10 +117,14 @@ type RemoteAction_Apply = {
 	 * - relay the result
 	 * - reference the return value by the consumer (TODO: Explain this better)
 	 */
-	responseBuffer: SharedArrayBuffer,
-}
+	responseBuffer: SharedArrayBuffer;
+};
 
-type RemoteAction = RemoteAction_Consume | RemoteAction_Get | RemoteAction_Set | RemoteAction_Apply;
+type RemoteAction =
+	| RemoteAction_Consume
+	| RemoteAction_Get
+	| RemoteAction_Set
+	| RemoteAction_Apply;
 
 // Look up TypeArray constructor because it is not available in all environments
 // and we want to use it for identifying typed arrays.
@@ -140,12 +144,6 @@ type SerializableDataType =
 	| null
 	| Error;
 
-// TODO: Switch from Uint8Array to DataView
-type DataTypeHandler<T> = {
-	write(target: DataView, value: T): any;
-	// TODO: Consider which params are appropriate here.
-	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string): T;
-};
 
 function ensureSufficientBufferSize<T extends TypedArray | DataView>(
 	arrayView: DataView,
@@ -173,6 +171,22 @@ function ensureSufficientBufferSize<T extends TypedArray | DataView>(
 	buffer.grow(prefixSize + requiredByteSize);
 	return new DataViewConstructor(buffer, arrayView.byteOffset);
 }
+
+class ThrownError {
+	readonly error: Error;
+
+	constructor(error: Error) {
+		this.error = error;
+	}
+}
+
+// TODO: Switch from Uint8Array to DataView
+type DataTypeHandler<T> = {
+	write(target: DataView, value: T): any;
+	// TODO: Consider which params are appropriate here.
+	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string): T;
+};
+
 
 // TODO: Remove this if it is unnecessary.
 const dataTypeHandler_Never: DataTypeHandler<undefined> = {
@@ -264,43 +278,51 @@ const dataTypeHandler_String: DataTypeHandler<string> = {
 		dataTypeHandler_Uint8Array.write(target, encodedText);
 	},
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
-		const stringData = dataTypeHandler_Uint8Array.read(source, endpoint, keyForRef);
+		const stringData = dataTypeHandler_Uint8Array.read(
+			source,
+			endpoint,
+			keyForRef,
+		);
 		const decoder = new TextDecoder();
 		return decoder.decode(stringData);
 	},
 };
 
-const symbolRemoteObject = Symbol('remoteObject');
+const symbolRemoteObject = Symbol("remoteObject");
 
 // TODO: Make type param Proxy?
-const dataTypeHandler_Object: DataTypeHandler<object> = {
+const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 	write(target: DataView, value: object) {
-		// TODO: Handle null as special case.
+		const valueToRelay = value === null
+			? null
+			// Relay object keys so they can be represented by a remote object.
+			: Object.keys(value);
 
-		// Relay object keys so they can be represented by a remote object.
-		const typedProperties = Object.keys(value);
-		const jsonString = JSON.stringify(typedProperties);
+		const jsonString = JSON.stringify(valueToRelay);
 		dataTypeHandler_String.write(target, jsonString);
 	},
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
 		const jsonString = dataTypeHandler_String.read(source, endpoint, keyForRef);
-		const objectKeys = JSON.parse(jsonString);
-		// TODO: Is this how we should handle an error like this?
-		if (!Array.isArray(objectKeys)) {
+		const nullOrObjectKeys = JSON.parse(jsonString);
+		if (nullOrObjectKeys === null) {
+			return null;
+		}
+
+		if (!Array.isArray(nullOrObjectKeys)) {
 			throw new TypeError(
-				`Expected array of object keys, got ${typeof objectKeys}`,
+				`Expected array of object keys, got ${typeof nullOrObjectKeys}`,
 			);
 		}
 
 		const result = { [symbolRemoteObject]: keyForRef };
-		for (const key of objectKeys) {
+		for (const key of nullOrObjectKeys) {
 			Object.defineProperty(result, key, {
 				get() {
 					const targetRef = keyForRef;
 					const keyForPropRef = crypto.randomUUID();
 					const responseBuffer = createSharedArrayBufferForRpc();
 					endpoint.postMessage({
-						type: 'get',
+						type: "get",
 						targetRef: targetRef,
 						propKey: key,
 						keyForRef: keyForPropRef,
@@ -314,16 +336,19 @@ const dataTypeHandler_Object: DataTypeHandler<object> = {
 					const targetRef = keyForRef;
 					const responseBuffer = createSharedArrayBufferForRpc();
 					endpoint.postMessage({
-						type: 'set',
+						type: "set",
 						targetRef: targetRef,
 						propKey: key,
 						value,
 						responseBuffer,
 					});
 
-					const ignoredKeyForRef = '';
+					const ignoredKeyForRef = "";
 					read(responseBuffer, endpoint, ignoredKeyForRef);
 				},
+				enumerable: true,
+				configurable: false,
+
 			});
 		}
 		return result;
@@ -348,7 +373,7 @@ const dataTypeHandler_Function: DataTypeHandler<Function> = {
 			// TODO: Pass endpoint or action functions
 			debugger;
 			endpoint.postMessage({
-				type: 'apply',
+				type: "apply",
 				contextRef,
 				targetRef,
 				keyForRef: keyForResultRef,
@@ -357,7 +382,6 @@ const dataTypeHandler_Function: DataTypeHandler<Function> = {
 			});
 			return read(responseBuffer, endpoint, keyForResultRef);
 		};
-
 	},
 };
 
@@ -374,6 +398,20 @@ const dataTypeHandler_Error: DataTypeHandler<Error> = {
 	},
 };
 
+const dataTypeHandler_ThrownError: DataTypeHandler<ThrownError> = {
+	write(target: DataView, value: ThrownError) {
+		const serializedError = serializeError(value.error);
+		const errorJson = JSON.stringify(serializedError);
+		dataTypeHandler_String.write(target, errorJson);
+	},
+	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
+		const errorJson = dataTypeHandler_String.read(source, endpoint, keyForRef);
+		const serializedError = JSON.parse(errorJson);
+		const error = deserializeError(serializedError);
+		return new ThrownError(error);
+	},
+};
+
 const dataTypeHandlerMap = {
 	Never: dataTypeHandler_Never,
 	Undefined: dataTypeHandler_Undefined,
@@ -385,6 +423,7 @@ const dataTypeHandlerMap = {
 	Object: dataTypeHandler_Object,
 	Function: dataTypeHandler_Function,
 	Error: dataTypeHandler_Error,
+	ThrownError: dataTypeHandler_ThrownError,
 };
 
 // Useful to lookup data type handler type byte
@@ -409,7 +448,9 @@ const sharedArrayBufferPrefixByteLength = 8;
 export function createSharedArrayBufferForRpc() {
 	// TODO: Consider preallocating a buffer that is large enough for primitive types.
 	// TODO: Revisit maxByteLength
-	return new SharedArrayBuffer(sharedArrayBufferPrefixByteLength, { maxByteLength: 1024 * 1024 * 1024 });
+	return new SharedArrayBuffer(sharedArrayBufferPrefixByteLength, {
+		maxByteLength: 1024 * 1024 * 1024,
+	});
 }
 
 export function write(target: SharedArrayBuffer, data: SerializableDataType) {
@@ -432,6 +473,8 @@ export function write(target: SharedArrayBuffer, data: SerializableDataType) {
 		handlerIndex = dataTypeHandlerIndices.String;
 	} else if (data instanceof Uint8Array) {
 		handlerIndex = dataTypeHandlerIndices.Uint8Array;
+	} else if (data instanceof ThrownError) {
+		handlerIndex = dataTypeHandlerIndices.ThrownError;
 	} else if (data instanceof Error) {
 		handlerIndex = dataTypeHandlerIndices.Error;
 	} else if (typeof data === "object") {
@@ -449,22 +492,19 @@ export function write(target: SharedArrayBuffer, data: SerializableDataType) {
 	const handler = dataTypeHandlerList[handlerIndex];
 	handler.write(new DataView(target, sharedArrayBufferPrefixByteLength), data);
 
-	Atomics.notify(
-		new BigInt64Array(target),
-		0
-	);
+	Atomics.notify(new BigInt64Array(target), 0);
 }
 
-export function read(source: SharedArrayBuffer, endpoint: RemoteEndpoint, keyForRef: string): SerializableDataType {
+export function read(
+	source: SharedArrayBuffer,
+	endpoint: RemoteEndpoint,
+	keyForRef: string,
+): SerializableDataType {
 	if (source.byteLength === 0) {
 		throw new Error("Cannot read from an empty DataView");
 	}
 
-	Atomics.wait(
-		new BigInt64Array(source),
-		0,
-		0n,
-	);
+	Atomics.wait(new BigInt64Array(source), 0, 0n);
 
 	const rpcHeader = new Uint8Array(
 		source,
@@ -478,7 +518,11 @@ export function read(source: SharedArrayBuffer, endpoint: RemoteEndpoint, keyFor
 	}
 
 	const dataView = new DataView(source, sharedArrayBufferPrefixByteLength);
-	return handler.read(dataView, endpoint, keyForRef);
+	const result = handler.read(dataView, endpoint, keyForRef);
+	if (result instanceof ThrownError) {
+		throw result.error;
+	}
+	return result;
 }
 
 // @TODO list supported response types
@@ -490,7 +534,7 @@ const exposedItems = new Map<string, SerializableDataType>();
  */
 const resultCache = new Map<string, any>();
 
-const symbolForRelease = Symbol('release');
+const symbolForRelease = Symbol("release");
 
 /**
  * Expose an object to the worker.
@@ -504,23 +548,22 @@ export function expose<T extends SerializableDataType>(
 	exposedName: string,
 	exposedValue: T,
 	// @TODO: Make this a generic type so we can accommodate other worker types.
-	endpoint: ExposingEndpoint
+	endpoint: ExposingEndpoint,
 ): ReleaseFunction {
 	// TODO: Fix type here
 	function onMessage(event: any) {
-		console.log('onMessage for', exposedName, event);
 		// @TODO: Warn if event doesn't have expected properties.
 
 		const action = event as RemoteAction;
 
 		switch (action.type) {
-			case 'consume': {
+			case "consume": {
 				write(action.responseBuffer, exposedValue);
 				// TODO: Make way to clean up when refs are GC'd
 				resultCache.set(action.keyForRef, exposedValue);
 				break;
 			}
-			case 'get': {
+			case "get": {
 				// @TODO: Try/catch for undefined subproperties or getter failure.
 				const target = resultCache.get(action.targetRef);
 				const result = target[action.propKey];
@@ -529,49 +572,47 @@ export function expose<T extends SerializableDataType>(
 				resultCache.set(action.keyForRef, result);
 				break;
 			}
-			case 'set': {
+			case "set": {
 				// @TODO: Try/catch for undefined subproperties or setter failure.
 				const target = resultCache.get(action.targetRef);
 				target[action.propKey] = action.value;
 				write(action.responseBuffer, undefined);
 				break;
 			}
-			case 'apply': {
-				// @TODO: Try/catch for undefined subproperties or call failure.
-				const context = resultCache.get(action.contextRef);
-				const func = resultCache.get(action.targetRef);
+			case "apply": {
+				try {
+					// @TODO: Try/catch for undefined subproperties or call failure.
+					const context = resultCache.get(action.contextRef);
+					const func = resultCache.get(action.targetRef);
 
-				const result = func.apply(context, action.args);
-				write(action.responseBuffer, result);
-				// TODO: Make way to clean up when refs are GC'd
-				resultCache.set(action.keyForRef, result);
+					const result = func.apply(context, action.args);
+					write(action.responseBuffer, result);
+					// TODO: Make way to clean up when refs are GC'd
+					resultCache.set(action.keyForRef, result);
+				} catch (error: any) {
+					write(action.responseBuffer, new ThrownError(error));
+				}
 				break;
 			}
 		}
 	}
 
-	console.log('exposing', exposedName);
-	endpoint.on('message', onMessage);
+	endpoint.on("message", onMessage);
 	return () => {
-		endpoint.off('message', onMessage);
-	}
+		endpoint.off("message", onMessage);
+	};
 }
 
-export function consume<T>(
-	name: string,
-	endpoint: RemoteEndpoint,
-): T {
-	console.log('consuming', name);
+export function consume<T>(name: string, endpoint: RemoteEndpoint): T {
 	const responseBuffer = createSharedArrayBufferForRpc();
 	const keyForRef = crypto.randomUUID();
 	// TODO: Make postMessage typed for acceptable messages
 	endpoint.postMessage({
-		type: 'consume',
+		type: "consume",
 		name,
 		keyForRef,
 		responseBuffer,
 	});
-	console.log('posted consume message for', name);
 
 	const result = read(responseBuffer, endpoint, keyForRef);
 	return result as T;

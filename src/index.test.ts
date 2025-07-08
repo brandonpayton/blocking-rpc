@@ -39,26 +39,81 @@ suite("Blocking RPC", () => {
 		});
 		fixture = consume("fixture", worker);
 	});
-	afterEach(() => {
-		worker.terminate();
+	afterEach(async () => {
+		await worker.terminate();
 	});
 
-	test("number property", async () => {
-		assert.equal(fixture.propOneTwoThree, 123);
+	test("get undefined properties", async () => {
+		assert.equal(fixture.propUndefined, undefined);
+		assert.equal(fixture.nested.propUndefined, undefined);
 	});
-	test("number property access - nested", async () => {
-		assert.equal(fixture.nested.propOneTwoThree, 123);
+	test("get boolean properties", async () => {
+		assert.equal(fixture.propTrue, true);
+		assert.equal(fixture.nested.propTrue, true);
+		assert.equal(fixture.propFalse, false);
+		assert.equal(fixture.nested.propFalse, false);
 	});
-	test("string property", async () => {
-		assert.equal(fixture.propHelloWorld, "Hello World");
+	test("get number property", async () => {
+		assert.equal(fixture.propZeroNumber, 0);
+		assert.equal(fixture.nested.propZeroNumber, 0);
+		assert.equal(fixture.propOneTwoThreeNumber, 123);
+		assert.equal(fixture.nested.propOneTwoThreeNumber, 123);
+		assert.equal(fixture.propOneTwoThreePointTwoFiveNumber, 123.25);
+		assert.equal(fixture.nested.propOneTwoThreePointTwoFiveNumber, 123.25);
+		assert.equal(fixture.propNegativeOneNumber, -1);
+		assert.equal(fixture.nested.propNegativeOneNumber, -1);
+		assert.equal(fixture.propNegativeOnePointFiveNumber, -1.5);
+		assert.equal(fixture.nested.propNegativeOnePointFiveNumber, -1.5);
 	});
-	test("string property access - nested", async () => {
-		assert.equal(fixture.nested.propHelloWorld, "Hello World");
+	test("get string property", async () => {
+		assert.equal(fixture.propEmptyString, "");
+		assert.equal(fixture.nested.propHelloWorldString, "Hello World");
+	});
+	test("get object property", async () => {
+		assert.deepEqual(fixture.propObject, { a: 1, b: 2, nested: { c: 3, d: 4 } });
+		assert.deepEqual(fixture.nested.propObject, { a: 1, b: 2, nested: { c: 3, d: 4 } });
+	});
+	test("get Uint8Array property", async () => {
+		assert.deepEqual(fixture.propUint8Array, new Uint8Array([1, 2, 3]));
+		assert.deepEqual(fixture.nested.propUint8Array, new Uint8Array([1, 2, 3]));
+	});
+	test("get Error property", async () => {
+		const expectedError = new Error("test");
+		const actualError = fixture.propIdentityFunction(expectedError);
+		assert.equal(actualError.message, expectedError.message);
+		assert.deepEqual(expectedError, actualError);
 	});
 	test("function property", async () => {
-		assert.equal(fixture.add(1, 2), 3);
+		assert.equal(fixture.propIdentityFunction(undefined), undefined);
+		assert.equal(fixture.propIdentityFunction(null), null);
+		assert.equal(fixture.propIdentityFunction(true), true);
+		assert.equal(fixture.propIdentityFunction(false), false);
+		assert.equal(fixture.propIdentityFunction(0), 0);
+		assert.equal(fixture.propIdentityFunction(1), 1);
+		assert.equal(fixture.propIdentityFunction(-1), -1);
+		assert.equal(fixture.propIdentityFunction(1.5), 1.5);
+		assert.equal(fixture.propIdentityFunction(Math.PI), Math.PI);
+		const expectedError = new Error("test");
+		const actualError = fixture.propIdentityFunction(expectedError);
+		assert.equal(actualError.message, expectedError.message);
+		assert.deepEqual(expectedError, actualError);
+		assert.deepEqual(
+			fixture.propIdentityFunction(new Uint8Array([1, 2, 3])),
+			new Uint8Array([1, 2, 3]),
+		);
+		assert.deepEqual(
+			// Use Object.entries to avoid comparing Symbol properties in the result.
+			Object.entries(
+				fixture.propIdentityFunction({ a: 1, b: 2, nested: { c: 3, d: 4 } })
+			),
+			Object.entries({ a: 1, b: 2, nested: { c: 3, d: 4 } }),
+		);
 	});
-	test("function property access - nested", async () => {
-		assert.equal(fixture.nested.add(3, 4), 7);
+	test("thrown error is propagated", async () => {
+		assert.throws(
+			() => fixture.throwTypeError("expected message"),
+			TypeError,
+			"expected message",
+		);
 	});
 });
