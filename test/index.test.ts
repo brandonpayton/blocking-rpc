@@ -2,7 +2,7 @@ import { suite, beforeEach, afterEach, test } from "node:test";
 import assert from "node:assert";
 import { Worker } from "node:worker_threads";
 
-import { consume } from "../src/index.ts";
+import { consume } from "../index.ts";
 
 import type { Fixture } from "./worker-that-exposes-test-fixtures.ts";
 

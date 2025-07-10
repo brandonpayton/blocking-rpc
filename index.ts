@@ -23,7 +23,7 @@ type RemoteAction_Consume = {
 	 */
 	name: string;
 
-	// TODO: Review these comments for correctness. This one below is false. This one below is now false
+	// TODO: Review these comments for correctness. This one below is now false
 	/**
 	 * A shared key used to cache and reference the remote target
 	 * of the operation stored in a WeakMap. The target will be naturally
@@ -515,7 +515,7 @@ const dataTypeHandlerList: DataTypeHandler<SerializableDataType>[] =
 // to preserve byte alignment of largest possible TypedArray (Float64Array).
 const sharedArrayBufferPrefixByteLength = 8;
 
-export function createSharedArrayBufferForRpc() {
+function createSharedArrayBufferForRpc() {
 	// TODO: Consider preallocating a buffer that is large enough for primitive types.
 	// TODO: Revisit maxByteLength
 	return new SharedArrayBuffer(sharedArrayBufferPrefixByteLength, {
@@ -523,7 +523,7 @@ export function createSharedArrayBufferForRpc() {
 	});
 }
 
-export function write(target: SharedArrayBuffer, data: SerializableDataType) {
+function write(target: SharedArrayBuffer, data: SerializableDataType) {
 	const rpcHeader = new Uint8Array(
 		target,
 		0,
@@ -568,7 +568,7 @@ export function write(target: SharedArrayBuffer, data: SerializableDataType) {
 	Atomics.notify(new BigInt64Array(target), 0);
 }
 
-export function read(
+function read(
 	source: SharedArrayBuffer,
 	endpoint: RemoteEndpoint,
 	keyForRef: string,

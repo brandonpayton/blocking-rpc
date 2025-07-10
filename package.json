@@ -1,9 +1,13 @@
 {
   "name": "blocking-rpc",
   "version": "0.0.1",
-  "description": "A blocking RPC implementation for use by WebAssembly imports",
+  "description": "A blocking RPC implementation for use in WebAssembly imports",
   "main": "index.js",
   "scripts": {
+    "clean": "rimraf dist test/dist",
+    "prebuild": "npm run clean",
+    "build": "tsc",
+    "postbuild": "copyfiles package.json package-lock.json README.md dist",
     "test": "node --experimental-strip-types --experimental-transform-types --disable-warning=ExperimentalWarning test/start-worker-test-runner.ts"
   },
   "type": "module",
@@ -11,7 +15,9 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.0.3",
+    "copyfiles": "^2.4.1",
     "prettier": "^3.6.0",
+    "rimraf": "^6.0.1",
     "typescript": "^5.8.3"
   },
   "dependencies": {
