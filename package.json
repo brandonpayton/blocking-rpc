@@ -8,17 +8,22 @@
     "prebuild": "npm run clean",
     "build": "tsc",
     "postbuild": "copyfiles package.json package-lock.json README.md dist",
-    "test": "node --experimental-strip-types --experimental-transform-types --disable-warning=ExperimentalWarning test/start-worker-test-runner.ts"
+    "test": "node --experimental-strip-types --experimental-transform-types --disable-warning=ExperimentalWarning test/start-worker-test-runner.ts",
+    "lint": "eslint"
   },
   "type": "module",
   "author": "Brandon Payton",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^9.30.1",
     "@types/node": "^24.0.3",
     "copyfiles": "^2.4.1",
+    "eslint": "^9.30.1",
+    "globals": "^16.3.0",
     "prettier": "^3.6.0",
     "rimraf": "^6.0.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.36.0"
   },
   "dependencies": {
     "serialize-error": "^12.0.0"
