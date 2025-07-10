@@ -24,9 +24,6 @@ const worker = await new Promise<Worker>((resolve, reject) => {
 	}
 });
 
-worker.stdout.pipe(process.stdout);
-worker.stderr.pipe(process.stderr);
-
 worker.on('exit', (code: number) => {
 	process.exit(code);
 });
