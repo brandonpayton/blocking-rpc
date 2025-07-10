@@ -2,7 +2,7 @@ import { parentPort, isMainThread } from "node:worker_threads";
 import { Worker } from "node:worker_threads";
 
 const worker = await new Promise<Worker>((resolve, reject) => {
-	const worker = new Worker(new URL("./worker.ts", import.meta.url));
+	const worker = new Worker(new URL("./worker-test-runner.ts", import.meta.url));
 
 	worker.on("message", onMessage);
 	worker.on("error", onError);

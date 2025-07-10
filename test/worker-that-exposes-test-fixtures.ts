@@ -1,7 +1,7 @@
 // TODO: How to embed this worker in a test module?
 
 import { parentPort, isMainThread } from 'node:worker_threads';
-import { expose } from '../index.ts';
+import { expose } from '../src/index.ts';
 
 if (isMainThread) {
   throw new Error('This file should only be run as a worker thread.');

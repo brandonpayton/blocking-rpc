@@ -12,7 +12,7 @@
 			"runtimeArgs": [
 				"--experimental-strip-types",
 				"--experimental-transform-types",
-				"${workspaceFolder}/run-test-in-worker/index.ts"
+				"${workspaceFolder}/test/start-worker-test-runner.ts"
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal",
