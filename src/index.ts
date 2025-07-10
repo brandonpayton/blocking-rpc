@@ -558,9 +558,12 @@ export function write(target: SharedArrayBuffer, data: SerializableDataType) {
 		throw new TypeError(`Unsupported data type: ${typeof data} (${data})`);
 	}
 
-	rpcHeader[0] = handlerIndex;
 	const handler = dataTypeHandlerList[handlerIndex];
 	handler.write(new DataView(target, sharedArrayBufferPrefixByteLength), data);
+
+	// ATTENTION: Use an atomic store op after the bulk write to ensure
+	// synchronization before notifying the reader.
+	Atomics.store(rpcHeader, 0, handlerIndex);
 
 	Atomics.notify(new BigInt64Array(target), 0);
 }
