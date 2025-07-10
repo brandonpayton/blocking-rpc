@@ -41,8 +41,6 @@ const fixture = {
 
 export type Fixture = typeof fixture;
 
-console.log("exposing calculator");
-
 expose(
 	'fixture',
 	fixture,
@@ -52,6 +50,3 @@ expose(
 );
 
 parentPort!.postMessage('worker-started');
-
-console.log('posted message: worker-started');
-

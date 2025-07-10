@@ -16,7 +16,6 @@ suite("Blocking RPC", () => {
 		);
 		await new Promise<Worker>((resolve, reject) => {
 			function startedHandler(message: any) {
-				console.log("startedHandler", message);
 				if (message === "worker-started") {
 					done();
 				}
@@ -31,7 +30,6 @@ suite("Blocking RPC", () => {
 				worker.off("error", errorHandler);
 			}
 			function errorHandler(error: any) {
-				console.log("errorHandler", error);
 				done(error);
 			}
 			worker.on("message", startedHandler);

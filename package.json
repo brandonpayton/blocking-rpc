@@ -4,7 +4,7 @@
   "description": "A blocking RPC implementation for use by WebAssembly imports",
   "main": "index.js",
   "scripts": {
-    "test": "node --experimental-strip-types --experimental-transform-types test/start-worker-test-runner.ts"
+    "test": "node --experimental-strip-types --experimental-transform-types --disable-warning=ExperimentalWarning test/start-worker-test-runner.ts"
   },
   "type": "module",
   "author": "Brandon Payton",
