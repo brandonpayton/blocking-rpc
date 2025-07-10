@@ -138,13 +138,19 @@ type RemoteAction_ProxyGetOwnPropertyDescriptor = {
 	responseBuffer: SharedArrayBuffer;
 };
 
+type RemoteAction_Release = {
+	type: "release";
+	keyForRef: string;
+};
+
 type RemoteAction =
 	| RemoteAction_Consume
+	| RemoteAction_Release
 	| RemoteAction_Get
 	| RemoteAction_Set
 	| RemoteAction_Apply
 	| RemoteAction_ProxyOwnKeys
-	| RemoteAction_ProxyGetOwnPropertyDescriptor;
+	| RemoteAction_ProxyGetOwnPropertyDescriptor
 
 // TODO: Improve name, maybe RemoteDataType.
 type SerializableDataType =
@@ -279,6 +285,7 @@ const dataTypeHandler_String: DataTypeHandler<string> = {
 };
 
 const symbolRemoteObject = Symbol("remoteObject");
+const symbolReleaseRemoteObject = Symbol("releaseRemoteObject");
 
 // TODO: Make type param Proxy?
 const dataTypeHandler_Object: DataTypeHandler<object | null> = {
@@ -311,12 +318,24 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 			throw new TypeError(`Unrecognized object kind: ${typeRecord.kind}`);
 		}
 
+		const releaseRemoteObject = () => {
+			endpoint.postMessage({
+				type: "release",
+				keyForRef,
+			});
+		};
+
 		const result = new Proxy(target, {
 			// TODO: Handle more traps to behave like a normal object.
+			// TODO: Handle has() trap.
 
 			get(target, prop) {
 				if (prop === symbolRemoteObject) {
 					return keyForRef;
+				}
+
+				if (prop === symbolReleaseRemoteObject) {
+					return releaseRemoteObject;
 				}
 
 				if (typeof prop === "symbol") {
@@ -391,6 +410,7 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 				return descriptor;
 			}
 		});
+		finalizerToReleaseRemoteObjects.register(result, releaseRemoteObject);
 
 		return result;
 	},
@@ -574,7 +594,26 @@ function read(
 /**
  * TODO: Explain this.
  */
+// TODO: Auto-cleanup when associate message channel is closed.
 const resultCache = new Map<string, object>();
+const finalizerToReleaseRemoteObjects = new FinalizationRegistry<() => void>(
+	(releaseRemoteObject) => releaseRemoteObject(),
+);
+
+// TODO: Improve this name.
+function cacheAnyResultThatHasRemoteOperations(
+	keyForRef: string,
+	/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+		We want to handle all possible results. */
+	result: any,
+) {
+	// TODO: Make way to clean up when refs are GC'd
+	// Only cache things that support further remote operations.
+	// TODO: Be more careful and explicit about what types are cached. There is probably a leak with Uint8Array.
+	if (result instanceof Object) {
+		resultCache.set(keyForRef, result);
+	}
+}
 
 /**
  * Expose an object to the worker.
@@ -598,11 +637,7 @@ export function expose<T extends SerializableDataType>(
 		switch (action.type) {
 			case "consume": {
 				write(action.responseBuffer, exposedValue);
-				if (typeof exposedValue === "object") {
-					// TODO: Make way to clean up when refs are GC'd
-					// Only cache things that support further remote operations.
-					resultCache.set(action.keyForRef, exposedValue as object);
-				}
+				cacheAnyResultThatHasRemoteOperations(action.keyForRef, exposedValue);
 				break;
 			}
 			case 'get': {
@@ -619,8 +654,7 @@ export function expose<T extends SerializableDataType>(
 					result = new ThrownError(error as Error);
 				}
 				write(action.responseBuffer, result);
-				// TODO: Make way to clean up when refs are GC'd
-				resultCache.set(action.keyForRef, result);
+				cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
 				break;
 			}
 			case 'set': {
@@ -652,8 +686,7 @@ export function expose<T extends SerializableDataType>(
 						result = new ThrownError(error as Error);
 					}
 					write(action.responseBuffer, result);
-					// TODO: Make way to clean up when refs are GC'd
-					resultCache.set(action.keyForRef, result);
+					cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
 				} catch (error: unknown) {
 					write(action.responseBuffer, new ThrownError(error as Error));
 				}
@@ -695,6 +728,11 @@ export function expose<T extends SerializableDataType>(
 				const { get, set, value, ...descriptorWithoutGetSetValue } = descriptor;
 				const descriptorJson = JSON.stringify(descriptorWithoutGetSetValue);
 				write(action.responseBuffer, descriptorJson);
+				break;
+			}
+			case 'release': {
+				// TODO: Add test for this.
+				resultCache.delete(action.keyForRef);
 				break;
 			}
 		}
