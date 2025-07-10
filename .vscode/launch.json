@@ -16,14 +16,11 @@
 			],
 			"cwd": "${workspaceFolder}",
 			"console": "integratedTerminal",
-			"skipFiles": [
-				"<node_internals>/**"
-			],
 			"program": "${workspaceFolder}/src/index.ts",
 			"preLaunchTask": "tsc: build - tsconfig.json",
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
-			]
+			],
 		}
 	]
 }
