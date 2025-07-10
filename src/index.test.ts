@@ -109,7 +109,9 @@ suite("Blocking RPC", () => {
 			Object.entries({ a: 1, b: 2, nested: { c: 3, d: 4 } }),
 		);
 	});
-	test.todo('can use remote arrays');
+	test('can use remote arrays', () => {
+		assert.deepEqual(fixture.propArray, [1, 2, 3]);
+	});
 	test.todo("set remote property");
 	test("thrown error is propagated", async () => {
 		assert.throws(

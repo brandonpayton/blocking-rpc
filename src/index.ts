@@ -120,11 +120,32 @@ type RemoteAction_Apply = {
 	responseBuffer: SharedArrayBuffer;
 };
 
+/**
+ * A remote request to get the own property keys of an object.
+ */
+type RemoteAction_ProxyOwnKeys = {
+	type: "proxy-ownKeys";
+	targetRef: string;
+	responseBuffer: SharedArrayBuffer;
+};
+
+/**
+ * A remote request to get the own property descriptor of an object.
+ */
+type RemoteAction_ProxyGetOwnPropertyDescriptor = {
+	type: "proxy-getOwnPropertyDescriptor";
+	targetRef: string;
+	propKey: string;
+	responseBuffer: SharedArrayBuffer;
+};
+
 type RemoteAction =
 	| RemoteAction_Consume
 	| RemoteAction_Get
 	| RemoteAction_Set
-	| RemoteAction_Apply;
+	| RemoteAction_Apply
+	| RemoteAction_ProxyOwnKeys
+	| RemoteAction_ProxyGetOwnPropertyDescriptor;
 
 // Look up TypeArray constructor because it is not available in all environments
 // and we want to use it for identifying typed arrays.
@@ -293,64 +314,115 @@ const symbolRemoteObject = Symbol("remoteObject");
 // TODO: Make type param Proxy?
 const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 	write(target: DataView, value: object) {
-		const valueToRelay = value === null
-			? null
-			// Relay object keys so they can be represented by a remote object.
-			: Object.keys(value);
+		let valueToRelay;
+		if (value === null) {
+			valueToRelay = null;
+		} else if (Array.isArray(value)) {
+			valueToRelay = { kind: 'array' };
+		} else {
+			valueToRelay = { kind: 'object' };
+		}
 
 		const jsonString = JSON.stringify(valueToRelay);
 		dataTypeHandler_String.write(target, jsonString);
 	},
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
 		const jsonString = dataTypeHandler_String.read(source, endpoint, keyForRef);
-		const nullOrObjectKeys = JSON.parse(jsonString);
-		if (nullOrObjectKeys === null) {
+		const typeRecord = JSON.parse(jsonString);
+		if (typeRecord === null) {
 			return null;
 		}
 
-		if (!Array.isArray(nullOrObjectKeys)) {
-			throw new TypeError(
-				`Expected array of object keys, got ${typeof nullOrObjectKeys}`,
-			);
+		let target;
+		if (typeRecord.kind === 'array') {
+			target = [];
+		} else if (typeRecord.kind === 'object') {
+			target = {};
+		} else {
+			throw new TypeError(`Unrecognized object kind: ${typeRecord.kind}`);
 		}
 
-		const result = { [symbolRemoteObject]: keyForRef };
-		for (const key of nullOrObjectKeys) {
-			Object.defineProperty(result, key, {
-				get() {
-					const targetRef = keyForRef;
-					const keyForPropRef = crypto.randomUUID();
-					const responseBuffer = createSharedArrayBufferForRpc();
-					endpoint.postMessage({
-						type: "get",
-						targetRef: targetRef,
-						propKey: key,
-						keyForRef: keyForPropRef,
-						responseBuffer,
-					});
+		const result = new Proxy(target, {
+			// TODO: Handle more traps to behave like a normal object.
 
-					return read(responseBuffer, endpoint, keyForPropRef);
-				},
-				// TODO: Should we constrain this type?
-				set(value: any) {
-					const targetRef = keyForRef;
-					const responseBuffer = createSharedArrayBufferForRpc();
-					endpoint.postMessage({
-						type: "set",
-						targetRef: targetRef,
-						propKey: key,
-						value,
-						responseBuffer,
-					});
+			get(target, prop, receiver) {
+				if (prop === symbolRemoteObject) {
+					return keyForRef;
+				}
 
-					const ignoredKeyForRef = "";
-					read(responseBuffer, endpoint, ignoredKeyForRef);
-				},
-				enumerable: true,
-				configurable: false,
+				if (typeof prop === "symbol") {
+					// TODO: Support getting properties with well-known symbols.
+					return undefined;
+				}
 
-			});
-		}
+				const targetRef = keyForRef;
+				const keyForPropRef = crypto.randomUUID();
+				const responseBuffer = createSharedArrayBufferForRpc();
+				endpoint.postMessage({
+					type: "get",
+					targetRef: targetRef,
+					propKey: prop,
+					keyForRef: keyForPropRef,
+					responseBuffer,
+				});
+
+				return read(responseBuffer, endpoint, keyForPropRef);
+			},
+			set(target, prop, value, receiver) {
+				if (typeof prop === "symbol") {
+					// TODO: Support setting properties with well-known symbols.
+					return false;
+				}
+
+				const targetRef = keyForRef;
+				const responseBuffer = createSharedArrayBufferForRpc();
+				endpoint.postMessage({
+					type: "set",
+					targetRef: targetRef,
+					propKey: prop,
+					value,
+					responseBuffer,
+				});
+
+				const ignoredKeyForRef = "";
+				read(responseBuffer, endpoint, ignoredKeyForRef);
+				return true;
+			},
+
+			ownKeys(target) {
+				const targetRef = keyForRef;
+				const responseBuffer = createSharedArrayBufferForRpc();
+				endpoint.postMessage({
+					type: "proxy-ownKeys",
+					targetRef,
+					responseBuffer,
+				});
+				const keysJson = read(responseBuffer, endpoint, keyForRef) as string;
+				const keys = JSON.parse(keysJson);
+				return keys;
+			},
+
+			getOwnPropertyDescriptor(target, prop) {
+				if (typeof prop === "symbol") {
+					// TODO: Support getting properties with well-known symbols.
+					return undefined;
+				}
+
+				const targetRef = keyForRef;
+				const responseBuffer = createSharedArrayBufferForRpc();
+				endpoint.postMessage({
+					type: "proxy-getOwnPropertyDescriptor",
+					targetRef,
+					propKey: prop,
+					responseBuffer,
+				});
+
+				const descriptorJson = read(responseBuffer, endpoint, keyForRef) as string;
+				const descriptor = JSON.parse(descriptorJson);
+				return descriptor;
+			}
+		});
+
 		return result;
 	},
 };
@@ -360,7 +432,6 @@ const dataTypeHandler_Function: DataTypeHandler<Function> = {
 		/* do nothing */
 	},
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
-		debugger;
 		return function remoteFunc(...args: any[]) {
 			const defaultContext = undefined;
 			// @ts-ignore
@@ -371,7 +442,6 @@ const dataTypeHandler_Function: DataTypeHandler<Function> = {
 			const responseBuffer = createSharedArrayBufferForRpc();
 			const keyForResultRef = crypto.randomUUID();
 			// TODO: Pass endpoint or action functions
-			debugger;
 			endpoint.postMessage({
 				type: "apply",
 				contextRef,
@@ -563,7 +633,7 @@ export function expose<T extends SerializableDataType>(
 				resultCache.set(action.keyForRef, exposedValue);
 				break;
 			}
-			case "get": {
+			case 'get': {
 				// @TODO: Try/catch for undefined subproperties or getter failure.
 				const target = resultCache.get(action.targetRef);
 				const result = target[action.propKey];
@@ -572,14 +642,14 @@ export function expose<T extends SerializableDataType>(
 				resultCache.set(action.keyForRef, result);
 				break;
 			}
-			case "set": {
+			case 'set': {
 				// @TODO: Try/catch for undefined subproperties or setter failure.
 				const target = resultCache.get(action.targetRef);
 				target[action.propKey] = action.value;
 				write(action.responseBuffer, undefined);
 				break;
 			}
-			case "apply": {
+			case 'apply': {
 				try {
 					// @TODO: Try/catch for undefined subproperties or call failure.
 					const context = resultCache.get(action.contextRef);
@@ -592,6 +662,26 @@ export function expose<T extends SerializableDataType>(
 				} catch (error: any) {
 					write(action.responseBuffer, new ThrownError(error));
 				}
+				break;
+			}
+			case 'proxy-ownKeys': {
+				const target = resultCache.get(action.targetRef);
+				const keys = Reflect.ownKeys(target);
+				const keysJson = JSON.stringify(keys);
+				write(action.responseBuffer, keysJson);
+				break;
+			}
+			case 'proxy-getOwnPropertyDescriptor': {
+				const target = resultCache.get(action.targetRef);
+				const descriptor = Reflect.getOwnPropertyDescriptor(target, action.propKey);
+				if (descriptor === undefined) {
+					write(action.responseBuffer, undefined);
+					break;
+				}
+
+				const { get, set, value, ...descriptorWithoutGetSetValue } = descriptor;
+				const descriptorJson = JSON.stringify(descriptorWithoutGetSetValue);
+				write(action.responseBuffer, descriptorJson);
 				break;
 			}
 		}
