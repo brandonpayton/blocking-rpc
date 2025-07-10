@@ -11,8 +11,8 @@ run({
 		'**/*.test.ts',
 	]
 })
-	.compose(spec)
 	.on('test:fail', () => {
 		process.exitCode = 1;
 	})
-	.pipe(process.stdout);
+	.compose(spec)
+	.pipe(process.stdout)
