@@ -15,7 +15,7 @@ suite("Blocking RPC", () => {
 			new URL("./worker-that-exposes-test-fixtures.ts", import.meta.url),
 		);
 		await new Promise<Worker>((resolve, reject) => {
-			function startedHandler(message: any) {
+			function startedHandler(message: string) {
 				if (message === "worker-started") {
 					done();
 				}
@@ -29,7 +29,7 @@ suite("Blocking RPC", () => {
 				worker.off("message", startedHandler);
 				worker.off("error", errorHandler);
 			}
-			function errorHandler(error: any) {
+			function errorHandler(error: Error) {
 				done(error);
 			}
 			worker.on("message", startedHandler);

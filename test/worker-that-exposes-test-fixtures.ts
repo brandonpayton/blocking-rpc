@@ -1,5 +1,3 @@
-// TODO: How to embed this worker in a test module?
-
 import { parentPort, isMainThread } from 'node:worker_threads';
 import { expose } from '../index.ts';
 
@@ -22,6 +20,7 @@ const props = {
 	propObject: { a: 1, b: 2, nested: { c: 3, d: 4 } },
 	propUint8Array: new Uint8Array([1, 2, 3]),
 	propError: new Error('test'),
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- We want a universal identity function.
 	propIdentityFunction: (value: any) => value,
 	propArray: [1, 2, 3],
 	add(a: number, b: number) {
@@ -45,7 +44,7 @@ expose(
 	'fixture',
 	fixture,
 	// TODO: Fix this type error.
-	// @ts-ignore
+	// @ts-expect-error - parentPort is defined in the worker thread.
 	parentPort!,
 );
 

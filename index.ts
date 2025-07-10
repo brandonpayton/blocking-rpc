@@ -14,8 +14,6 @@ interface RemoteEndpoint {
 
 type ReleaseFunction = () => void;
 
-type NonEmptyArray<T> = [T, ...T[]];
-
 type RemoteAction_Consume = {
 	type: "consume";
 	/**
@@ -107,6 +105,7 @@ type RemoteAction_Apply = {
 	/**
 	 * The arguments to pass to the method.
 	 */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- We want to handle all possible arguments.
 	args: any[];
 
 	keyForRef: string;
@@ -147,11 +146,6 @@ type RemoteAction =
 	| RemoteAction_ProxyOwnKeys
 	| RemoteAction_ProxyGetOwnPropertyDescriptor;
 
-// Look up TypeArray constructor because it is not available in all environments
-// and we want to use it for identifying typed arrays.
-const TypedArray = Object.getPrototypeOf(Uint8Array.prototype).constructor;
-type TypedArray = typeof TypedArray;
-
 // TODO: Improve name, maybe RemoteDataType.
 type SerializableDataType =
 	| undefined
@@ -161,36 +155,23 @@ type SerializableDataType =
 	| string
 	| Uint8Array
 	| object
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- We want to handle all possible functions.
 	| Function
 	| null
 	| Error;
 
-
-function ensureSufficientBufferSize<T extends TypedArray | DataView>(
+function ensureSufficientBufferSize(
 	arrayView: DataView,
-	requiredByteSize: number,
-	DataViewConstructor: {
-		new (
-			buffer: ArrayBuffer | SharedArrayBuffer,
-			byteOffset?: number,
-			byteLength?: number,
-		): T;
-	} = DataView as any,
-): T {
+	requiredByteSize: number
+): DataView {
 	const buffer = arrayView.buffer as SharedArrayBuffer;
 	const prefixSize = buffer.byteLength - arrayView.byteLength;
 	if (buffer.byteLength >= prefixSize + requiredByteSize) {
-		return arrayView instanceof DataViewConstructor
-			? arrayView
-			: (new DataViewConstructor(
-					buffer,
-					arrayView.byteOffset,
-					arrayView.byteLength,
-				) as T);
+		return arrayView;
 	}
 
 	buffer.grow(prefixSize + requiredByteSize);
-	return new DataViewConstructor(buffer, arrayView.byteOffset);
+	return new DataView(buffer, arrayView.byteOffset);
 }
 
 class ThrownError {
@@ -201,29 +182,17 @@ class ThrownError {
 	}
 }
 
-// TODO: Switch from Uint8Array to DataView
 type DataTypeHandler<T> = {
-	write(target: DataView, value: T): any;
+	write(target: DataView, value: T): void;
 	// TODO: Consider which params are appropriate here.
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string): T;
 };
 
-
-// TODO: Remove this if it is unnecessary.
-const dataTypeHandler_Never: DataTypeHandler<undefined> = {
-	write: (target: DataView, value: any) => {
-		throw new Error("Cannot write 'never' type");
-	},
-	read: (source: DataView) => {
-		throw new Error("Cannot read 'never' type");
-	},
-};
-
 const dataTypeHandler_Undefined: DataTypeHandler<undefined> = {
-	write(target: DataView, value: undefined) {
+	write() {
 		// no-op
 	},
-	read(source: DataView) {
+	read() {
 		return undefined;
 	},
 };
@@ -345,7 +314,7 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 		const result = new Proxy(target, {
 			// TODO: Handle more traps to behave like a normal object.
 
-			get(target, prop, receiver) {
+			get(target, prop) {
 				if (prop === symbolRemoteObject) {
 					return keyForRef;
 				}
@@ -368,7 +337,7 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 
 				return read(responseBuffer, endpoint, keyForPropRef);
 			},
-			set(target, prop, value, receiver) {
+			set(target, prop, value) {
 				if (typeof prop === "symbol") {
 					// TODO: Support setting properties with well-known symbols.
 					return false;
@@ -389,7 +358,7 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 				return true;
 			},
 
-			ownKeys(target) {
+			ownKeys() {
 				const targetRef = keyForRef;
 				const responseBuffer = createSharedArrayBufferForRpc();
 				endpoint.postMessage({
@@ -427,14 +396,17 @@ const dataTypeHandler_Object: DataTypeHandler<object | null> = {
 	},
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- We want to handle all possible functions.
 const dataTypeHandler_Function: DataTypeHandler<Function> = {
-	write(target: DataView, value: Function) {
+	write() {
 		/* do nothing */
 	},
 	read(source: DataView, endpoint: RemoteEndpoint, keyForRef: string) {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- We want to handle all possible arguments.
 		return function remoteFunc(...args: any[]) {
 			const defaultContext = undefined;
-			// @ts-ignore
+			// @ts-expect-error - Allow untyped context (`this`).
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- We want to handle all possible objects.
 			const contextRef = (this as any)[symbolRemoteObject] ?? defaultContext;
 
 			// TODO: Document quirk that remote functions are always bound.
@@ -483,7 +455,6 @@ const dataTypeHandler_ThrownError: DataTypeHandler<ThrownError> = {
 };
 
 const dataTypeHandlerMap = {
-	Never: dataTypeHandler_Never,
 	Undefined: dataTypeHandler_Undefined,
 	Boolean: dataTypeHandler_Boolean,
 	Number: dataTypeHandler_Number,
@@ -600,14 +571,10 @@ function read(
 
 // @TODO list supported response types
 
-const exposedItems = new Map<string, SerializableDataType>();
-
 /**
  * TODO: Explain this.
  */
-const resultCache = new Map<string, any>();
-
-const symbolForRelease = Symbol("release");
+const resultCache = new Map<string, object>();
 
 /**
  * Expose an object to the worker.
@@ -623,8 +590,7 @@ export function expose<T extends SerializableDataType>(
 	// @TODO: Make this a generic type so we can accommodate other worker types.
 	endpoint: ExposingEndpoint,
 ): ReleaseFunction {
-	// TODO: Fix type here
-	function onMessage(event: any) {
+	function onMessage(event: RemoteAction) {
 		// @TODO: Warn if event doesn't have expected properties.
 
 		const action = event as RemoteAction;
@@ -632,14 +598,26 @@ export function expose<T extends SerializableDataType>(
 		switch (action.type) {
 			case "consume": {
 				write(action.responseBuffer, exposedValue);
-				// TODO: Make way to clean up when refs are GC'd
-				resultCache.set(action.keyForRef, exposedValue);
+				if (typeof exposedValue === "object") {
+					// TODO: Make way to clean up when refs are GC'd
+					// Only cache things that support further remote operations.
+					resultCache.set(action.keyForRef, exposedValue as object);
+				}
 				break;
 			}
 			case 'get': {
 				// @TODO: Try/catch for undefined subproperties or getter failure.
 				const target = resultCache.get(action.targetRef);
-				const result = target[action.propKey];
+				let result;
+				try {
+					// TODO: Consider proactively throwing an error for unserializable types at runtime.
+					// TODO: Can we enforce serializable types purely with type checking?
+					/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+						Allow runtime to produce TypeError if target is not an object. */
+					result = (target as any)[action.propKey];
+				} catch (error: unknown) {
+					result = new ThrownError(error as Error);
+				}
 				write(action.responseBuffer, result);
 				// TODO: Make way to clean up when refs are GC'd
 				resultCache.set(action.keyForRef, result);
@@ -648,8 +626,16 @@ export function expose<T extends SerializableDataType>(
 			case 'set': {
 				// @TODO: Try/catch for undefined subproperties or setter failure.
 				const target = resultCache.get(action.targetRef);
-				target[action.propKey] = action.value;
-				write(action.responseBuffer, undefined);
+				let result;
+				try {
+					/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+						Allow runtime to produce TypeError if target is not an object. */
+					(target as any)[action.propKey] = action.value;
+					result = undefined;
+				} catch (error: unknown) {
+					result = new ThrownError(error as Error);
+				}
+				write(action.responseBuffer, result);
 				break;
 			}
 			case 'apply': {
@@ -658,17 +644,31 @@ export function expose<T extends SerializableDataType>(
 					const context = resultCache.get(action.contextRef);
 					const func = resultCache.get(action.targetRef);
 
-					const result = func.apply(context, action.args);
+					let result;
+					try {
+						// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- We want to allow any function.
+						result = (func as Function).apply(context, action.args);
+					} catch (error: unknown) {
+						result = new ThrownError(error as Error);
+					}
 					write(action.responseBuffer, result);
 					// TODO: Make way to clean up when refs are GC'd
 					resultCache.set(action.keyForRef, result);
-				} catch (error: any) {
-					write(action.responseBuffer, new ThrownError(error));
+				} catch (error: unknown) {
+					write(action.responseBuffer, new ThrownError(error as Error));
 				}
 				break;
 			}
 			case 'proxy-ownKeys': {
 				const target = resultCache.get(action.targetRef);
+				if (target === undefined) {
+					write(
+						action.responseBuffer,
+						new ThrownError(new Error('Remote target is undefined')),
+					);
+					break;
+				}
+
 				const keys = Reflect.ownKeys(target);
 				const keysJson = JSON.stringify(keys);
 				write(action.responseBuffer, keysJson);
@@ -676,12 +676,22 @@ export function expose<T extends SerializableDataType>(
 			}
 			case 'proxy-getOwnPropertyDescriptor': {
 				const target = resultCache.get(action.targetRef);
+				if (target === undefined) {
+					write(
+						action.responseBuffer,
+						new ThrownError(new Error('Remote target is undefined')),
+					);
+					break;
+				}
+
 				const descriptor = Reflect.getOwnPropertyDescriptor(target, action.propKey);
 				if (descriptor === undefined) {
 					write(action.responseBuffer, undefined);
 					break;
 				}
 
+				/* eslint-disable-next-line @typescript-eslint/no-unused-vars --
+					We want to serialize the descriptor without get/set/value. */
 				const { get, set, value, ...descriptorWithoutGetSetValue } = descriptor;
 				const descriptorJson = JSON.stringify(descriptorWithoutGetSetValue);
 				write(action.responseBuffer, descriptorJson);

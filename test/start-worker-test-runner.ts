@@ -1,4 +1,3 @@
-import { parentPort, isMainThread } from "node:worker_threads";
 import { Worker } from "node:worker_threads";
 
 // Force colored output from test runner.
@@ -10,7 +9,7 @@ const worker = await new Promise<Worker>((resolve, reject) => {
 	worker.on("message", onMessage);
 	worker.on("error", onError);
 
-	function onMessage(message: any) {
+	function onMessage(message: string) {
 		if (message === "worker-started") {
 			resolve(worker);
 			settled();
