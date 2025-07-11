@@ -4,7 +4,7 @@
 		"module": "esnext",
 		"moduleResolution": "bundler",
 		"declaration": true,
-		"outDir": "dist",
+		"outDir": "dist/build",
 		"strict": true,
 		"esModuleInterop": true,
 	},

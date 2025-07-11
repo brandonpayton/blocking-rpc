@@ -4,10 +4,11 @@
   "description": "A blocking RPC implementation for use in WebAssembly imports",
   "main": "index.js",
   "scripts": {
-    "clean": "rimraf dist test/dist",
+    "clean": "rimraf dist",
     "prebuild": "npm run clean",
     "build": "tsc",
-    "postbuild": "copyfiles package.json package-lock.json README.md dist",
+    "postbuild": "copyfiles package.json package-lock.json README.md dist/build",
+    "create-package-tarball": "npm run build && cd dist/build && npm pack --pack-destination=..",
     "test": "node --experimental-strip-types --experimental-transform-types --disable-warning=ExperimentalWarning test/start-worker-test-runner.ts",
     "lint": "eslint"
   },
