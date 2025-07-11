@@ -595,7 +595,7 @@ function read(
  * TODO: Explain this.
  */
 // TODO: Auto-cleanup when associate message channel is closed.
-const resultCache = new Map<string, object>();
+const resultCache = new Map<string, unknown>();
 const finalizerToReleaseRemoteObjects = new FinalizationRegistry<() => void>(
 	(releaseRemoteObject) => releaseRemoteObject(),
 );
@@ -615,6 +615,127 @@ function cacheAnyResultThatHasRemoteOperations(
 	}
 }
 
+function onMessageForExposedValue(event: RemoteAction) {
+	// @TODO: Warn if event doesn't have expected properties.
+
+	const action = event as RemoteAction;
+
+	switch (action.type) {
+		case "consume": {
+			const exposedValue = resultCache.get(action.name);
+			if (exposedValue === undefined) {
+				throw new Error(`There is no value exposed with name '${action.name}'.`);
+			}
+			write(action.responseBuffer, exposedValue);
+			// TODO: Cleanup cached references when consumer goes away.
+			cacheAnyResultThatHasRemoteOperations(action.keyForRef, exposedValue);
+			break;
+		}
+		case 'get': {
+			// @TODO: Try/catch for undefined subproperties or getter failure.
+			const target = resultCache.get(action.targetRef);
+			let result;
+			try {
+				// TODO: Consider proactively throwing an error for unserializable types at runtime.
+				// TODO: Can we enforce serializable types purely with type checking?
+				/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+					Allow runtime to produce TypeError if target is not an object. */
+				result = (target as any)[action.propKey];
+			} catch (error: unknown) {
+				result = new ThrownError(error as Error);
+			}
+			write(action.responseBuffer, result);
+			cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
+			break;
+		}
+		case 'set': {
+			// @TODO: Try/catch for undefined subproperties or setter failure.
+			const target = resultCache.get(action.targetRef);
+			let result;
+			try {
+				/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
+					Allow runtime to produce TypeError if target is not an object. */
+				(target as any)[action.propKey] = action.value;
+				result = undefined;
+			} catch (error: unknown) {
+				result = new ThrownError(error as Error);
+			}
+			write(action.responseBuffer, result);
+			break;
+		}
+		case 'apply': {
+			try {
+				// @TODO: Try/catch for undefined subproperties or call failure.
+				const context = resultCache.get(action.contextRef);
+				const func = resultCache.get(action.targetRef);
+
+				let result;
+				try {
+					// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- We want to allow any function.
+					result = (func as Function).apply(context, action.args);
+				} catch (error: unknown) {
+					result = new ThrownError(error as Error);
+				}
+				write(action.responseBuffer, result);
+				cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
+			} catch (error: unknown) {
+				write(action.responseBuffer, new ThrownError(error as Error));
+			}
+			break;
+		}
+		case 'proxy-ownKeys': {
+			const target = resultCache.get(action.targetRef);
+			if (target === undefined) {
+				write(
+					action.responseBuffer,
+					new ThrownError(new Error('Remote target is undefined')),
+				);
+				break;
+			}
+
+
+			let result;
+			try {
+				// Assume target is an object and let the runtime throw if it is not.
+				const keys = Reflect.ownKeys(target as object);
+				result = JSON.stringify(keys);
+			} catch (error: unknown) {
+				result = new ThrownError(error as Error);
+			}
+			write(action.responseBuffer, result);
+			break;
+		}
+		case 'proxy-getOwnPropertyDescriptor': {
+			const target = resultCache.get(action.targetRef);
+			let result;
+			try {
+				const descriptor = Reflect.getOwnPropertyDescriptor(
+					// Assume target is an object and let the runtime throw if it is not.
+					target as object,
+					action.propKey
+				);
+				if (descriptor === undefined) {
+					result = undefined;
+				} else {
+					/* eslint-disable-next-line @typescript-eslint/no-unused-vars --
+						We want to serialize the descriptor without get/set/value. */
+					const { get, set, value, ...descriptorWithoutGetSetValue } = descriptor;
+					result= JSON.stringify(descriptorWithoutGetSetValue);
+				}
+			} catch (error: unknown) {
+				result = new ThrownError(error as Error);
+			}
+			write(action.responseBuffer, result);
+			break;
+		}
+		case 'release': {
+			// TODO: Add test for this.
+			resultCache.delete(action.keyForRef);
+			break;
+		}
+	}
+}
+
 /**
  * Expose an object to the worker.
  *
@@ -629,122 +750,27 @@ export function expose<T extends SerializableDataType>(
 	// @TODO: Make this a generic type so we can accommodate other worker types.
 	endpoint: ExposingEndpoint,
 ): ReleaseFunction {
-	function onMessage(event: RemoteAction) {
-		// @TODO: Warn if event doesn't have expected properties.
-
-		const action = event as RemoteAction;
-
-		switch (action.type) {
-			case "consume": {
-				write(action.responseBuffer, exposedValue);
-				cacheAnyResultThatHasRemoteOperations(action.keyForRef, exposedValue);
-				break;
-			}
-			case 'get': {
-				// @TODO: Try/catch for undefined subproperties or getter failure.
-				const target = resultCache.get(action.targetRef);
-				let result;
-				try {
-					// TODO: Consider proactively throwing an error for unserializable types at runtime.
-					// TODO: Can we enforce serializable types purely with type checking?
-					/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
-						Allow runtime to produce TypeError if target is not an object. */
-					result = (target as any)[action.propKey];
-				} catch (error: unknown) {
-					result = new ThrownError(error as Error);
-				}
-				write(action.responseBuffer, result);
-				cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
-				break;
-			}
-			case 'set': {
-				// @TODO: Try/catch for undefined subproperties or setter failure.
-				const target = resultCache.get(action.targetRef);
-				let result;
-				try {
-					/* eslint-disable-next-line @typescript-eslint/no-explicit-any --
-						Allow runtime to produce TypeError if target is not an object. */
-					(target as any)[action.propKey] = action.value;
-					result = undefined;
-				} catch (error: unknown) {
-					result = new ThrownError(error as Error);
-				}
-				write(action.responseBuffer, result);
-				break;
-			}
-			case 'apply': {
-				try {
-					// @TODO: Try/catch for undefined subproperties or call failure.
-					const context = resultCache.get(action.contextRef);
-					const func = resultCache.get(action.targetRef);
-
-					let result;
-					try {
-						// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- We want to allow any function.
-						result = (func as Function).apply(context, action.args);
-					} catch (error: unknown) {
-						result = new ThrownError(error as Error);
-					}
-					write(action.responseBuffer, result);
-					cacheAnyResultThatHasRemoteOperations(action.keyForRef, result);
-				} catch (error: unknown) {
-					write(action.responseBuffer, new ThrownError(error as Error));
-				}
-				break;
-			}
-			case 'proxy-ownKeys': {
-				const target = resultCache.get(action.targetRef);
-				if (target === undefined) {
-					write(
-						action.responseBuffer,
-						new ThrownError(new Error('Remote target is undefined')),
-					);
-					break;
-				}
-
-				const keys = Reflect.ownKeys(target);
-				const keysJson = JSON.stringify(keys);
-				write(action.responseBuffer, keysJson);
-				break;
-			}
-			case 'proxy-getOwnPropertyDescriptor': {
-				const target = resultCache.get(action.targetRef);
-				if (target === undefined) {
-					write(
-						action.responseBuffer,
-						new ThrownError(new Error('Remote target is undefined')),
-					);
-					break;
-				}
-
-				const descriptor = Reflect.getOwnPropertyDescriptor(target, action.propKey);
-				if (descriptor === undefined) {
-					write(action.responseBuffer, undefined);
-					break;
-				}
-
-				/* eslint-disable-next-line @typescript-eslint/no-unused-vars --
-					We want to serialize the descriptor without get/set/value. */
-				const { get, set, value, ...descriptorWithoutGetSetValue } = descriptor;
-				const descriptorJson = JSON.stringify(descriptorWithoutGetSetValue);
-				write(action.responseBuffer, descriptorJson);
-				break;
-			}
-			case 'release': {
-				// TODO: Add test for this.
-				resultCache.delete(action.keyForRef);
-				break;
-			}
-		}
+	if (resultCache.has(exposedName)) {
+		throw new Error(`There is already a value exposed with name '${exposedName}'.`);
 	}
+	resultCache.set(exposedName, exposedValue);
 
-	endpoint.on("message", onMessage);
+	endpoint.on("message", onMessageForExposedValue);
 	return () => {
-		endpoint.off("message", onMessage);
+		endpoint.off("message", onMessageForExposedValue);
+		resultCache.delete(exposedName);
 	};
 }
 
 export function consume<T>(name: string, endpoint: RemoteEndpoint): T {
+	// TODO: Find out why this check is breaking in testing, fix it, and re-enable.
+	// if (isMainThread) {
+	// 	throw new Error(
+	// 		'consume() cannot be called from the main thread ' +
+	// 		'because it blocks the main thread and can cause deadlock.'
+	// 	);
+	// }
+
 	const responseBuffer = createSharedArrayBufferForRpc();
 	const keyForRef = crypto.randomUUID();
 	// TODO: Make postMessage typed for acceptable messages
