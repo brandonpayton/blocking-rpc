@@ -41,6 +41,7 @@ suite("Blocking RPC", () => {
 		await worker.terminate();
 	});
 
+	test.todo("throw if SharedArrayBuffer is not available");
 	test("get undefined properties", async () => {
 		assert.equal(fixture.propUndefined, undefined);
 		assert.equal(fixture.nested.propUndefined, undefined);
@@ -106,6 +107,11 @@ suite("Blocking RPC", () => {
 			),
 			Object.entries({ a: 1, b: 2, nested: { c: 3, d: 4 } }),
 		);
+	});
+	test("use return value of remote function", () => {
+		const result = fixture.callWithObjectReturnValue();
+		assert.equal(result.propOneTwoThreeNumber, 123);
+		assert.equal(result.doubleIt(21), 42);
 	});
 	test('can use remote arrays', () => {
 		assert.deepEqual(fixture.propArray, [1, 2, 3]);

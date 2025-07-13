@@ -29,6 +29,12 @@ const props = {
 	throwTypeError(message: string) {
 		throw new TypeError(message);
 	},
+	callWithObjectReturnValue() {
+		return {
+			propOneTwoThreeNumber: 123,
+			doubleIt: (x: number) => x * 2,
+		};
+	},
 };
 
 const fixture = {
